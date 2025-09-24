@@ -18,18 +18,23 @@ const App = () => {
           <Route path="" element={<Dashboard />} />
         </Route>
         {/* Ruta de login - No accesible si ya está autenticado */}
-        <Route
-          path="login"
-          element={
-            <Login />
-          }
-        />
+        <Route element={<ProtectedRoute canActivate={!user} redirectPath='/' />}>
+          <Route
+            path="login"
+            element={
+              <Login />
+            }
+          />
+        </Route>
+        <Route element={<ProtectedRoute canActivate={!user} redirectPath='/' />}>
         <Route
           path="register"
           element={
             <Register />
           }
         />
+        </Route>
+        
 
         {/* Ruta de fallback para URLs no encontradas */}
         <Route path="*" element={<Navigate to="/" replace />} />

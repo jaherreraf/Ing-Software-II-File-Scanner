@@ -1,4 +1,4 @@
-function Scan({maliciousCount, analysisResult, isScanning}) {
+function Scan({ file, maliciousCount, analysisResult, isScanning }) {
     return(
         <div className="flex flex-col gap-6  h-full">
           {/* Sección de Resultados (Placeholder) */}
@@ -16,7 +16,7 @@ function Scan({maliciousCount, analysisResult, isScanning}) {
               )}
             </div>
 
-            {!analysisResult ? (
+            {!analysisResult || !file ? (
   <div className="flex-grow flex items-center justify-center text-gray-400 dark:text-gray-500">
     <div className="text-center">
       {isScanning ? (

@@ -10,6 +10,46 @@ import { CircularProgressbar } from 'react-circular-progressbar';
 const API_KEY = "cd5325a1662758dae81656a6a25b8c1291248e94fa8057d143717d6173ff04d5";
 import gsap from "gsap";
 const DELAY_MS = 3000;
+// Añadido: base de la API y utilidades de hashing/polling
+const API_BASE = 'https://www.virustotal.com/api/v3';
+
+async function computeSHA256(file) {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+async function pollAnalysis(analysisId, apiKey, { timeoutMs = 90000 } = {}) {
+  const start = Date.now();
+  let delay = 1000;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const resp = await axios.get(`${API_BASE}/analyses/${analysisId}`, {
+        headers: { 'x-apikey': apiKey }
+      });
+      const attrs = resp?.data?.data?.attributes;
+      if (attrs?.status === 'completed') return resp.data;
+      if (attrs?.status === 'queued' || attrs?.status === 'running') {
+        await sleep(delay);
+        delay = Math.min(Math.floor(delay * 1.5), 5000);
+        continue;
+      }
+      throw new Error(`Estado inesperado: ${attrs?.status || 'desconocido'}`);
+    } catch (err) {
+      if (err?.response?.status === 429) {
+        // rate limit: espera y reintenta
+        await sleep(Math.max(delay, 2000));
+        delay = Math.min(Math.floor(delay * 1.5), 5000);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('Tiempo de espera agotado al obtener el análisis.');
+}
+
 function Dashboard() {
   const [file, setFile] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -23,92 +63,84 @@ function Dashboard() {
   const [selectNavbar, setSelectNavbar] = useState(0);
   const options = ['Escaner Archivo','Extractor de String','Historial']
   const sidebarRef = useRef(null)
+  const activeScanId = useRef(0); // invalidar resultados de scans previos
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     // Reinicia el resultado de análisis al cargar un nuevo archivo
     setAnalysisResult(null);
   };
- const scanFile = async () => {
-    console.log('scanFile');
+  const scanFile = async () => {
     if (!file) {
       console.error("No hay archivo para escanear.");
       return;
     }
-
+    const scanId = ++activeScanId.current; // id de esta corrida
     setIsScanning(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    setAnalysisResult(null);
 
     try {
-      // 1. Enviar el archivo para escanear
-      const response = await fetch('https://www.virustotal.com/api/v3/files', {
-        method: 'POST',
-        headers: {
-          'x-apikey': API_KEY,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error al subir el archivo: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        console.error("Error al subir el archivo:", data.error.message);
-        setIsScanning(false);
-        return;
-      }
-
-      const analysisId = data.data.id;
-      console.log("Archivo enviado. ID de análisis:", analysisId);
-
-      // 2. Poll the API for the analysis results (with a delay)
-      let analysisData = null;
-      let count = 0;
-      const MAX_RETRIES = 10;
-
-      while (count < MAX_RETRIES) {
-        const analysisResponse = await fetch(`https://www.virustotal.com/api/v3/analyses/${analysisId}`, {
-          method: 'GET',
+      // 1) Intentar obtener reporte existente por hash (rápido si ya fue analizado)
+      const sha256 = await computeSHA256(file);
+      try {
+        const reportResp = await axios.get(`${API_BASE}/files/${sha256}`, {
           headers: { 'x-apikey': API_KEY },
         });
-
-        if (!analysisResponse.ok) {
-          throw new Error(`Error al obtener el análisis: ${analysisResponse.status}`);
+        const lastResults = reportResp?.data?.data?.attributes?.last_analysis_results;
+        if (lastResults) {
+          if (scanId === activeScanId.current) {
+            setAnalysisResult(lastResults);
+            setIsScanning(false);
+          }
+          return;
         }
-
-        analysisData = await analysisResponse.json();
-
-        if (analysisData.data.attributes.status === 'completed') {
-          break;
+      } catch (err) {
+        // Si no existe (404) seguimos a subir; otros errores se reportan
+        if (err?.response?.status && err.response.status !== 404) {
+          if (scanId === activeScanId.current) {
+            setMsgError({ msg: 'Error consultando el reporte del archivo.', state: true });
+            setIsScanning(false);
+          }
+          return;
         }
-
-        await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-        count++;
       }
 
-      // Update state with the final result
-      if (analysisData && analysisData.data.attributes.status === 'completed') {
-        console.log("Análisis completado:", analysisData.data.attributes.results);
-        setAnalysisResult(analysisData.data.attributes.results);
+      // 2) Subir archivo (no forzar Content-Type para no romper el boundary)
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadResp = await axios.post(`${API_BASE}/files`, formData, {
+        headers: { 'x-apikey': API_KEY },
+      });
+
+      const analysisId = uploadResp?.data?.data?.id;
+      if (!analysisId) {
+        throw new Error('No se obtuvo un ID de análisis válido.');
+      }
+
+      // 3) Polling robusto con backoff
+      const analysisData = await pollAnalysis(analysisId, API_KEY, { timeoutMs: 90000 });
+      const results = analysisData?.data?.attributes?.results;
+
+      if (results) {
+        if (scanId === activeScanId.current) setAnalysisResult(results);
       } else {
-        console.warn("Análisis no completado a tiempo. Intente de nuevo más tarde.");
+        if (scanId === activeScanId.current) setMsgError({ msg: 'Análisis completado pero sin resultados disponibles.', state: true });
       }
-      refreshMsgError();
-      console.log('finally: ', msgError);
-
     } catch (error) {
       console.error("Hubo un error al escanear el archivo:", error);
-      setMsgError({msg: '', state: false});
-      setMsgError({msg: 'Hubo un error al escanear el archivo', state: true});
-
-      console.log('catch: ', msgError);
+      const isRateLimit = error?.response?.status === 429;
+      if (scanId === activeScanId.current) {
+        setMsgError({
+          msg: isRateLimit
+            ? 'Límite de peticiones alcanzado. Intenta de nuevo en un momento.'
+            : 'Error al conectar con la API de VirusTotal. Intenta nuevamente.',
+          state: true
+        });
+      }
     } finally {
-      setIsScanning(false);
+      if (scanId === activeScanId.current) setIsScanning(false);
     }
-};
+  };
   useEffect(() => {
   if (file) {
     scanFile();
@@ -119,7 +151,10 @@ function refreshMsgError(){
 }
   
   function handleEmptyFile(){
-    setFile(null)
+    activeScanId.current++;         // invalida cualquier scan en curso
+    setIsScanning(false);           // detiene spinner
+    setAnalysisResult(null);        // limpia resultados
+    setFile(null);                  // limpia archivo
   }
   // Calcula los contadores para el componente CircularProgressbar
   const maliciousCount = analysisResult ? Object.values(analysisResult).filter(r => r.category === 'malicious').length : 0;
