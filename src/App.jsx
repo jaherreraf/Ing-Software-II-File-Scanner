@@ -7,22 +7,30 @@ import Register from './views/Register';
 
 import Dashboard from './views/Dashboard';
 
+function getStoredUser() {
+  try {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  } catch {
+    return null;
+  }
+}
+
 const App = () => {
-  const [user, setUser] = useState(getStoredUser);
+  const [user, setUser] = useState(getStoredUser());
   return (
     <Router>
       <Routes>
         {/* Ruta principal protegida - Redirige a dashboard si está autenticado */}
-
         <Route element={<ProtectedRoute canActivate={user} redirectPath='/login' />}>
-          <Route path="" element={<Dashboard />} />
+          <Route path="" element={<Dashboard setUser={setUser} />} />
         </Route>
         {/* Ruta de login - No accesible si ya está autenticado */}
         <Route element={<ProtectedRoute canActivate={!user} redirectPath='/' />}>
           <Route
             path="login"
             element={
-              <Login />
+              <Login setUser={setUser} />
             }
           />
         </Route>
@@ -42,15 +50,5 @@ const App = () => {
     </Router>
   );
 };
-function getStoredUser() {
-  try {
-    const storedUser = localStorage.getItem('user');
-    // Parse the JSON data if it exists; otherwise, return null.
-    return storedUser ? JSON.parse(storedUser) : null;
-  } catch (error) {
-    console.error("Failed to parse user data from localStorage", error);
-    return null;
-  }
-}
 
 export default App;

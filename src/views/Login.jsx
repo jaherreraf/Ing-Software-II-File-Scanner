@@ -1,8 +1,9 @@
 // src/components/Login.js
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
-const Login = () => {
+const Login = ({ setUser }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,32 +18,20 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
-
-    try {
-      // Aquí iría tu llamada real a la API
-      // const response = await api.login({ email, password });
-      
-      // Simulación de login exitoso
-      if (email && password) {
-        const userData = {
-          id: 1,
-          email: email,
-          name: 'Usuario Demo',
-          role: 'user'
-        };
-        
-        const token = 'fake-jwt-token-' + Date.now();
-        localStorage.setItem('user', JSON.stringify(userData));
-        localStorage.setItem('token', token);
-        navigate('/');
-      } else {
-        setError('Por favor ingresa email y contraseña');
-      }
-    } catch (err) {
-      setError('Error en el login: ' + err.message);
-    } finally {
-      setIsLoading(false);
+    // Login con Supabase Auth
+    const { data, error: supaError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    setIsLoading(false);
+    if (supaError || !data.session) {
+      setError('Email o contraseña incorrectos');
+      return;
     }
+    localStorage.setItem('user', JSON.stringify(data.user));
+    localStorage.setItem('token', data.session.access_token);
+    setUser(data.user); // Actualiza el estado global
+    navigate('/');
   };
 
   return (
@@ -98,6 +87,17 @@ const Login = () => {
             </button>
           </div>
         </form>
+        {/* Botón para ir a registro */}
+        <div className="mt-4 text-center">
+          <span className="text-gray-600">¿No tienes una cuenta?</span>
+          <button
+            type="button"
+            className="ml-2 text-blue-600 hover:underline font-semibold"
+            onClick={() => navigate('/register')}
+          >
+            Regístrate aquí
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from 'react-router-dom';
 import Theme from "../components/Theme";
 import Scan from "../components/Scan"
 import ARV_extractor from "../components/ARV_extractor"
@@ -50,7 +51,7 @@ async function pollAnalysis(analysisId, apiKey, { timeoutMs = 90000 } = {}) {
   throw new Error('Tiempo de espera agotado al obtener el análisis.');
 }
 
-function Dashboard() {
+function Dashboard({ setUser }) {
   const [file, setFile] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
@@ -64,6 +65,7 @@ function Dashboard() {
   const options = ['Escaner Archivo','Extractor de String','Historial']
   const sidebarRef = useRef(null)
   const activeScanId = useRef(0); // invalidar resultados de scans previos
+  const navigate = useNavigate();
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     // Reinicia el resultado de análisis al cargar un nuevo archivo
@@ -191,8 +193,15 @@ useEffect(() => {
     });
   }
 }, [isMobileMenuOpen]);
-  /* ... (El código anterior de importaciones y estados permanece igual) ... */
-
+ 
+  // Función para cerrar sesión
+  function handleLogout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null);
+    navigate('/login');
+  }
+  const user = JSON.parse(localStorage.getItem('user'));
   return (
     <div className="App w-screen h-screen md:max-h-screen bg-slate-100 dark:bg-slate-900 overflow-hidden">
       <div className="w-full h-full md:max-h-screen grid md:grid-cols-7">
@@ -227,10 +236,10 @@ useEffect(() => {
           <div>
             <div className="flex flex-col h-full items-center justify-center gap-2">
               <span className="text-center text-gray-500 dark:text-gray-400 text-sm mt-auto">
-                Hi, José Herrera 👋
+                Hi, {user?.user_metadata?.name || user?.email || 'Usuario'} 👋
               </span>
               {/* Botón de cerrar sesión */}
-              <button className="w-full py-3 px-4 rounded-lg bg-gray-100 dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-800 transition-colors duration-200 text-gray-700 dark:text-gray-300 font-medium flex items-center justify-center gap-3 cursor-pointer">
+              <button onClick={handleLogout} className="w-full py-3 px-4 rounded-lg bg-gray-100 dark:bg-slate-800 hover:bg-red-100 dark:hover:bg-red-800 transition-colors duration-200 text-gray-700 dark:text-gray-300 font-medium flex items-center justify-center gap-3 cursor-pointer">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
