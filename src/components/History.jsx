@@ -82,7 +82,7 @@ const History = () => {
               {history.map((item, index) => (
                 <tr key={index} className="hover:bg-gray-50 dark:hover:bg-slate-900">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {item.name}
+                    {item.file_name}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {item.isMalicious === true ? (
@@ -103,7 +103,7 @@ const History = () => {
                     {item.maliciousCount !== undefined ? `${item.maliciousCount} de ${item.totalAnalyzers}` : 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {item.date}
+                    {item.uploaded_at ? new Date(item.uploaded_at).toLocaleString() : 'N/A'}
                   </td>
                 </tr>
               ))}
