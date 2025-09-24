@@ -23,7 +23,7 @@ const App = () => {
       <Routes>
         {/* Ruta principal protegida - Redirige a dashboard si está autenticado */}
         <Route element={<ProtectedRoute canActivate={user} redirectPath='/login' />}>
-          <Route path="" element={<Dashboard setUser={setUser} />} />
+          <Route path="" element={<Dashboard user={user} setUser={setUser} />} />
         </Route>
         {/* Ruta de login - No accesible si ya está autenticado */}
         <Route element={<ProtectedRoute canActivate={!user} redirectPath='/' />}>

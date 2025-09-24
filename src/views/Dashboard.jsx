@@ -8,6 +8,8 @@ import axios from "axios";
 import 'react-circular-progressbar/dist/styles.css';
 import { CircularProgressbar } from 'react-circular-progressbar';
 
+import { supabase } from '../supabaseClient';
+
 const API_KEY = "cd5325a1662758dae81656a6a25b8c1291248e94fa8057d143717d6173ff04d5";
 import gsap from "gsap";
 const DELAY_MS = 3000;
@@ -50,19 +52,36 @@ async function pollAnalysis(analysisId, apiKey, { timeoutMs = 90000 } = {}) {
   }
   throw new Error('Tiempo de espera agotado al obtener el análisis.');
 }
+const getFileHash = async (file) => {
+  if (!file) {
+    return null;
+  }
 
+  // 1. Leer el contenido del archivo como un ArrayBuffer
+  const buffer = await file.arrayBuffer();
+
+  // 2. Calcular el hash SHA-256 del buffer
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+
+  // 3. Convertir el ArrayBuffer del hash a una cadena hexadecimal
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return hashHex;
+};
 function Dashboard({ setUser }) {
   const [file, setFile] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Nuevo estado para el menú móvil
-  const [history, setHistory] = useState([]);
   const [msgError, setMsgError] = useState({
-    msg:null,
-    state:false,
+    msg: null,
+    state: false,
   })
   const [selectNavbar, setSelectNavbar] = useState(0);
-  const options = ['Escaner Archivo','Extractor de String','Historial']
+  const options = ['Escaner Archivo', 'Extractor de String', 'Historial']
   const sidebarRef = useRef(null)
   const activeScanId = useRef(0); // invalidar resultados de scans previos
   const navigate = useNavigate();
@@ -141,18 +160,54 @@ function Dashboard({ setUser }) {
       }
     } finally {
       if (scanId === activeScanId.current) setIsScanning(false);
+      handleSubmitFile()
     }
   };
   useEffect(() => {
-  if (file) {
-    scanFile();
+    if (file) {
+      scanFile();
+    }
+  }, [file]);
+  async function handleSubmitFile() {
+    if (!file) return;
+    const fileHash = await getFileHash(file);
+
+    // Verificación para asegurarte de que el hash se calculó correctamente
+    if (!fileHash) {
+      console.error('No se pudo calcular el hash del archivo.');
+      return;
+    }
+
+    try {
+      // Paso 1: Obtener la información necesaria del archivo sin subirlo
+
+      const newFileRow = {
+        user_id: user.id, // Debes obtener el ID del usuario autenticado
+        file_name: file.name,
+        file_type: file.type,
+        file_hash: fileHash,
+        // Puedes agregar más metadatos si los necesitas
+      };
+
+      // Paso 2: Insertar los metadatos en la base de datos
+      const { data: insertData, error: insertError } = await supabase
+        .from('file')
+        .insert([newFileRow]);
+
+      if (insertError) {
+        console.error('Error al insertar en la DB:', insertError);
+        return;
+      }
+
+      console.log('Fila insertada con éxito:', insertData);
+      // Aquí puedes añadir cualquier lógica de éxito, como mostrar una notificación.
+
+    } catch (error) {
+      console.error('Ocurrió un error inesperado:', error);
+    }
   }
-}, [file]);
-function refreshMsgError(){
-  setMsgError({msg:null , state:!msgError.state})
-}
-  
-  function handleEmptyFile(){
+
+  function handleEmptyFile() {
     activeScanId.current++;         // invalida cualquier scan en curso
     setIsScanning(false);           // detiene spinner
     setAnalysisResult(null);        // limpia resultados
@@ -162,38 +217,38 @@ function refreshMsgError(){
   const maliciousCount = analysisResult ? Object.values(analysisResult).filter(r => r.category === 'malicious').length : 0;
   const totalAnalyzers = analysisResult ? Object.keys(analysisResult).length : 65;
 
-useEffect(() => {
-  // Asegúrate de que la referencia exista
-  if (!sidebarRef.current) return;
+  useEffect(() => {
+    // Asegúrate de que la referencia exista
+    if (!sidebarRef.current) return;
 
-  // Usa GSAP.set() para establecer el estado inicial sin animación si estamos en móvil
-  if (window.innerWidth < 768) {
-    gsap.set(sidebarRef.current, {
-      left: '-100vw',
-      opacity: 0,
-    });
-  }
+    // Usa GSAP.set() para establecer el estado inicial sin animación si estamos en móvil
+    if (window.innerWidth < 768) {
+      gsap.set(sidebarRef.current, {
+        left: '-100vw',
+        opacity: 0,
+      });
+    }
 
-  // Luego, maneja la animación de apertura y cierre
-  if (isMobileMenuOpen && window.innerWidth < 768) {
-    // Animación de entrada
-    gsap.to(sidebarRef.current, {
-      left: 0,
-      opacity: 1,
-      duration: 0.7,
-      ease: "power2.out",
-    });
-  } else if (!isMobileMenuOpen && window.innerWidth < 768) {
-    // Animación de salida
-    gsap.to(sidebarRef.current, {
-      left: '-100vw',
-      opacity: 0,
-      duration: 0.7,
-      ease: "power2.in",
-    });
-  }
-}, [isMobileMenuOpen]);
- 
+    // Luego, maneja la animación de apertura y cierre
+    if (isMobileMenuOpen && window.innerWidth < 768) {
+      // Animación de entrada
+      gsap.to(sidebarRef.current, {
+        left: 0,
+        opacity: 1,
+        duration: 0.7,
+        ease: "power2.out",
+      });
+    } else if (!isMobileMenuOpen && window.innerWidth < 768) {
+      // Animación de salida
+      gsap.to(sidebarRef.current, {
+        left: '-100vw',
+        opacity: 0,
+        duration: 0.7,
+        ease: "power2.in",
+      });
+    }
+  }, [isMobileMenuOpen]);
+
   // Función para cerrar sesión
   function handleLogout() {
     localStorage.removeItem('token');
@@ -220,7 +275,7 @@ useEffect(() => {
           </header>
           <ul className="flex flex-col items-start justify-center gap-4">
             {options.map((option, index) =>
-              <li onClick={()=>setSelectNavbar(index)} key={index} className={`font-bold cursor-pointer hover:underline transition-all duration-300 ease-in-out ${selectNavbar==index? 'text-slate-600': 'text-slate-950 dark:text-slate-50 '}`}>
+              <li onClick={() => setSelectNavbar(index)} key={index} className={`font-bold cursor-pointer hover:underline transition-all duration-300 ease-in-out ${selectNavbar == index ? 'text-slate-600' : 'text-slate-950 dark:text-slate-50 '}`}>
                 {option}
               </li>
             )}
@@ -268,8 +323,8 @@ useEffect(() => {
             </div>
             <Theme />
           </div>
-           {/* --- Nuevo diseño para el archivo cargado --- */}
-          {file && selectNavbar!=2 && (
+          {/* --- Nuevo diseño para el archivo cargado --- */}
+          {file && selectNavbar != 2 && (
             <div className="bg-white dark:bg-slate-950 p-6 rounded-xl shadow-sm flex flex-col border border-gray-200 dark:border-slate-800">
               {/* Contenedor principal para la información del archivo y el círculo */}
               <div className="flex justify-between items-start mb-6 w-full">
@@ -363,7 +418,7 @@ useEffect(() => {
           )}
 
           {/* Renderiza el área de carga solo si no hay un archivo */}
-          {!file && selectNavbar!=2 && (
+          {!file && selectNavbar != 2 && (
             <div className="bg-white dark:bg-slate-950 p-8 rounded-xl shadow-sm flex flex-col items-center justify-center text-center border border-gray-200 dark:border-slate-800">
 
               <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4">Escanea tu archivo ahora</h2>
@@ -380,54 +435,54 @@ useEffect(() => {
               </label>
             </div>
           )}
-          {selectNavbar==0 && <Scan file={file} maliciousCount={maliciousCount} totalAnalyzers={totalAnalyzers} analysisResult={analysisResult} isScanning={isScanning} scanFile={scanFile} handleEmptyFile={handleEmptyFile}></Scan>}
-          {selectNavbar==1 && <ARV_extractor file={file}/>}
-          {selectNavbar==2 && <History history={history}/>}
+          {selectNavbar == 0 && <Scan file={file} maliciousCount={maliciousCount} totalAnalyzers={totalAnalyzers} analysisResult={analysisResult} isScanning={isScanning} scanFile={scanFile} handleEmptyFile={handleEmptyFile}></Scan>}
+          {selectNavbar == 1 && <ARV_extractor file={file} />}
+          {selectNavbar == 2 && <History />}
         </div>
       </div>
       {
-        msgError.state && <Message msg={msgError.msg} state={msgError.state}/>
+        msgError.state && <Message msg={msgError.msg} state={msgError.state} />
       }
     </div>
   );
 }
 
-function Message({msg,state}){
+function Message({ msg, state }) {
   const msgRef = useRef(null)
   useEffect(() => {
-  // Create a new GSAP Timeline
-  const tl = gsap.timeline({
-    // Optional: add a delay to the entire timeline
-    delay: 1
-  });
-
-  // Check if the ref exists before animating
-  if (msgRef.current && state==true) {
-    // Animation 1: From hidden to visible (y:100 to y:0)
-    tl.fromTo(
-      msgRef.current,
-      { y: 100, opacity: 0.9 },
-      { y: 0, opacity: 1, duration: 1 }
-    )
-    // Animation 2: Keep the message for a while
-    .to(msgRef.current, {
-      y: '-110vh',
-      opacity: 0.5,
-      duration: 4,
-      delay: 3 // Wait 3 seconds before starting this animation
-    })
-    // Animation 3: Make it disappear completely
-    .to(msgRef.current, {
-      display: 'none',
-      duration: 0.5
+    // Create a new GSAP Timeline
+    const tl = gsap.timeline({
+      // Optional: add a delay to the entire timeline
+      delay: 1
     });
-  }
 
-  // Optional: Cleanup function to kill the timeline when the component unmounts
-  return () => tl.kill();
+    // Check if the ref exists before animating
+    if (msgRef.current && state == true) {
+      // Animation 1: From hidden to visible (y:100 to y:0)
+      tl.fromTo(
+        msgRef.current,
+        { y: 100, opacity: 0.9 },
+        { y: 0, opacity: 1, duration: 1 }
+      )
+        // Animation 2: Keep the message for a while
+        .to(msgRef.current, {
+          y: '-110vh',
+          opacity: 0.5,
+          duration: 4,
+          delay: 3 // Wait 3 seconds before starting this animation
+        })
+        // Animation 3: Make it disappear completely
+        .to(msgRef.current, {
+          display: 'none',
+          duration: 0.5
+        });
+    }
 
-}, [state]);
-  return(
+    // Optional: Cleanup function to kill the timeline when the component unmounts
+    return () => tl.kill();
+
+  }, [state]);
+  return (
     <div ref={msgRef} className="bg-slate-300/40 dark:bg-slate-800/40 dark:text-white shadow-2xl  fixed bottom-4 right-4 p-4 rounded-xl min-w-24 min-h-6 max-w-sm grid place-content-center border-b-2 border-b-red-500">
       <span className="text-sm text-justify">{msg}</span>
     </div>

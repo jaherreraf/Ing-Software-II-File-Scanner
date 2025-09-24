@@ -1,7 +1,54 @@
 // History.jsx
-import React from 'react';
+import {useState, useEffect} from 'react';
+import { supabase } from '../supabaseClient';
 
-const History = ({ history }) => {
+function getStoredUser() {
+  try {
+    const user = localStorage.getItem('user');
+    return user ? JSON.parse(user) : null;
+  } catch (error) {
+    console.error('Error al obtener el usuario de localStorage:', error);
+    return null;
+  }
+}
+
+async function getUserFiles() {
+  const user = getStoredUser();
+  if (!user) {
+    console.error('No hay usuario autenticado.');
+    return null;
+  }
+
+  const { data: files, error } = await supabase
+    .from('file')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('uploaded_at', { ascending: false }); // Ordena por fecha de creación descendente
+
+  if (error) {
+    console.error('Error al obtener los archivos:', error);
+    return null;
+  }
+
+  return files;
+}
+
+const History = () => {
+  const [history, setHistory] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFiles = async () => {
+      setIsLoading(true);
+      const userFiles = await getUserFiles();
+      if (userFiles) {
+        setHistory(userFiles);
+      }
+      setIsLoading(false);
+    };
+
+    fetchFiles();
+  }, []); 
   return (
     <div className="bg-white dark:bg-slate-950 p-6 rounded-xl shadow-sm flex flex-col border border-gray-200 dark:border-slate-800 h-full overflow-hidden">
       <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-4">
