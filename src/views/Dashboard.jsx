@@ -169,35 +169,52 @@ function Dashboard({ setUser }) {
     }
   }, [file]);
   async function handleSubmitFile() {
+    let newRecordId = null
+    let newScanId = null
     if (!file) return;
     const fileHash = await getFileHash(file);
-
-    // Verificación para asegurarte de que el hash se calculó correctamente
     if (!fileHash) {
       console.error('No se pudo calcular el hash del archivo.');
       return;
     }
-
     try {
-      // Paso 1: Obtener la información necesaria del archivo sin subirlo
-
+      console.log("TABLE FILE")
       const newFileRow = {
-        user_id: user.id, // Debes obtener el ID del usuario autenticado
+        user_id: user.id,
         file_name: file.name,
         file_type: file.type,
         file_hash: fileHash,
-        // Puedes agregar más metadatos si los necesitas
       };
-
-      // Paso 2: Insertar los metadatos en la base de datos
       const { data: insertData, error: insertError } = await supabase
         .from('file')
-        .insert([newFileRow]);
+        .insert([newFileRow])
+        .select();
+      if (insertError) {
+        console.error('Error al insertar en la DB:', insertError);
+        return;
+      }
+      newRecordId = insertData[0].file_id;
+      console.log('FILA INSERTADA CON EXITO:', insertData); //COLOCAR ESTE MENSAJE VISIBLE PARA EL USUARIO CON COMPONENTE MESSAGE
+    } catch (error) {
+      console.error('Ocurrió un error inesperado file:', error);
+    }
+    try {
+      const newRow = {
+        file_id: newRecordId,
+        scan_report:analysisResult ? JSON.stringify(analysisResult) : null,
+        vt_score:maliciousCount,
+        total_analyzers:totalAnalyzers,
+      };
+      const { data: insertData, error: insertError } = await supabase
+        .from('scan')
+        .insert([newRow])
+        .select()
 
       if (insertError) {
         console.error('Error al insertar en la DB:', insertError);
         return;
       }
+      newScanId = insertData[0].scan_id;
 
       console.log('Fila insertada con éxito:', insertData);
       // Aquí puedes añadir cualquier lógica de éxito, como mostrar una notificación.
@@ -205,6 +222,32 @@ function Dashboard({ setUser }) {
     } catch (error) {
       console.error('Ocurrió un error inesperado:', error);
     }
+    if(maliciousDetections)
+      try {
+      console.log("VENDOR WARNING:")
+       const newRows = maliciousDetections.map(target => {
+        return {
+          file_id: newRecordId,
+          scan_id: newScanId,
+          vendor_name: target.engine_name,
+          warning_message:target.result
+        };
+      });
+        const { data: insertData, error: insertError } = await supabase
+          .from('vendor_warning')
+          .insert(newRows);
+
+        if (insertError) {
+          console.error('Error al insertar en la DB:', insertError);
+          return;
+        }
+
+        console.log('vendo_warning insertada con éxito:', insertData);
+        // Aquí puedes añadir cualquier lógica de éxito, como mostrar una notificación.
+
+      } catch (error) {
+        console.error('Ocurrió un error inesperado:', error);
+      }
   }
 
   function handleEmptyFile() {
@@ -215,6 +258,17 @@ function Dashboard({ setUser }) {
   }
   // Calcula los contadores para el componente CircularProgressbar
   const maliciousCount = analysisResult ? Object.values(analysisResult).filter(r => r.category === 'malicious').length : 0;
+  //const maliciousDetections = analysisResult ? Object.values(analysisResult).filter(r => r.category === 'malicious') : [];
+  const maliciousDetections = [
+     {
+          engine_name: "ENGINE NAME",
+          result:"VHYAL"
+        },
+        {
+          engine_name: "ENGINE NAME 2",
+          result:"VHYAL%^SKNN"
+        }
+  ]
   const totalAnalyzers = analysisResult ? Object.keys(analysisResult).length : 65;
 
   useEffect(() => {
